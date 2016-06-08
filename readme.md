@@ -33,10 +33,10 @@ $ ansible-playbook baas-aio.yml
 
 ## BaaS Portal Access
 
-http://192.168.33.20:9000
-username: admin@example.com
-password: secret123
+- http://192.168.33.20:9000
+- username: admin@example.com
+- password: secret123
 
 ## BaaS API Access
 
-http://192.168.33.10.8081/AppServices/{org}/{app}
+- http://192.168.33.10.8081/AppServices/{org}/{app}
