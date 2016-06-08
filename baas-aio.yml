@@ -1,0 +1,44 @@
+- become: yes
+  hosts: baas
+  vars:
+    java: java-1.7.0-openjdk
+    java_latest: /usr/java/latest
+    java_default: /usr/java/default
+    edge: apigee-edge-4.15.07.03
+  tasks:
+    - yum: name={{ item }} state=installed
+      with_items:
+        - '{{ java }}'
+        - '{{ java }}-devel'
+    - shell: readlink $(readlink /usr/bin/java) | sed -e 's/\/bin\/java//g'
+      register: java_home
+    - block:
+        - file: path=/usr/java state=directory
+        - file: src={{ java_home.stdout }}/ dest={{ java_latest }} state=link
+        - file: src={{ java_latest }}/ dest={{ java_default }} state=link
+        - shell: alternatives --install /usr/bin/java java {{ java_default }}/bin/java 1
+        - shell: alternatives --set java {{ java_default }}/bin/java
+      when: java_home.stdout != "{{ java_default }}"
+    - lineinfile: dest=~/.bashrc line='PATH=$PATH:$HOME/bin'
+      notify: reload bashrc
+    - lineinfile: dest=~/.bashrc line='export PATH'
+      notify: reload bashrc
+    - lineinfile: dest=~/.bashrc line='export JAVA_HOME=/usr/java/default'
+      notify: reload bashrc
+    - lineinfile: dest=~/.bashrc line='export PATH=$JAVA_HOME/bin:$PATH'
+      notify: reload bashrc
+    - unarchive: src=./{{ edge }}.zip dest=~/ creates=~/{{ edge }}
+    - command: ./apigee-install.sh -r /opt -d /opt -j {{ java_default }} chdir=~/{{ edge }}
+    - copy: src=./license.txt dest=/opt/license.txt
+    - copy: src=./baas-config dest=/opt/apigee4/share/installer/baas-config
+    - replace: >
+        dest=/opt/apigee4/share/installer/apigee-setup.sh
+        regexp='^....INST_ZK=1$'
+        replace='    INST_ZK=0'
+    - command: ./apigee-setup.sh -p ds -f baas-config chdir=/opt/apigee4/share/installer
+    - command: ./apigee-setup.sh -p abs -f baas-config chdir=/opt/apigee4/share/installer
+    - command: ./apigee-setup.sh -p abp -f baas-config chdir=/opt/apigee4/share/installer
+    - command: ./set-autostart.sh chdir=/opt/apigee4/bin
+  handlers:
+    - name: reload bashrc
+      shell: source ~/.bashrc executable=/bin/bash  

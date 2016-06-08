@@ -1,0 +1,46 @@
+- become: yes
+  hosts: edge
+  vars:
+    java: java-1.7.0-openjdk
+    java_latest: /usr/java/latest
+    java_default: /usr/java/default
+    edge: apigee-edge-4.15.07.03
+    admin_user: admin@example.com
+    admin_pass: secret123
+    org: dev
+    env: test
+  tasks:
+    - yum: name={{ item }} state=installed
+      with_items:
+        - '{{ java }}'
+        - '{{ java }}-devel'
+    - shell: readlink $(readlink /usr/bin/java) | sed -e 's/\/bin\/java//g'
+      register: java_home
+    - block:
+        - file: path=/usr/java state=directory
+        - file: src={{ java_home.stdout }}/ dest={{ java_latest }} state=link
+        - file: src={{ java_latest }}/ dest={{ java_default }} state=link
+        - shell: alternatives --install /usr/bin/java java {{ java_default }}/bin/java 1
+        - shell: alternatives --set java {{ java_default }}/bin/java
+      when: java_home.stdout != "{{ java_default }}"
+    - lineinfile: dest=~/.bashrc line='PATH=$PATH:$HOME/bin'
+      notify: reload bashrc
+    - lineinfile: dest=~/.bashrc line='export PATH'
+      notify: reload bashrc
+    - lineinfile: dest=~/.bashrc line='export JAVA_HOME=/usr/java/default'
+      notify: reload bashrc
+    - lineinfile: dest=~/.bashrc line='export PATH=$JAVA_HOME/bin:$PATH'
+      notify: reload bashrc
+    - unarchive: src=./{{ edge }}.zip dest=~/ creates=~/{{ edge }}
+    - copy: src=./postgresql.conf dest=~/{{ edge }}/installer/postgres/postgresql.conf
+    - command: ./apigee-install.sh -r /opt -d /opt -j {{ java_default }} chdir=~/{{ edge }}
+    - copy: src=./license.txt dest=/opt/license.txt
+    - copy: src=./edge-config dest=/opt/apigee4/share/installer/edge-config
+    - command: ./apigee-setup.sh -p aio -f edge-config chdir=/opt/apigee4/share/installer
+    - command: ./create-org.sh -o {{ org }} -a {{ admin_user }} -P {{ admin_pass }} chdir=/opt/apigee4/bin
+    - command: ./create-roles.sh -o {{ org }} -P {{ admin_pass }} chdir=/opt/apigee4/bin
+    - command: ./add-env.sh -o {{ org }} -P {{ admin_pass }} -e {{ env }} -A -p 9001 -v default -a - chdir=/opt/apigee4/bin
+    - command: ./set-autostart.sh chdir=/opt/apigee4/bin
+  handlers:
+    - name: reload bashrc
+      shell: source ~/.bashrc executable=/bin/bash  
